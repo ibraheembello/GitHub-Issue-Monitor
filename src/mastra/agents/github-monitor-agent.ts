@@ -1,16 +1,16 @@
-import { Agent } from '@mastra/core/agent';
-import { openai } from '@ai-sdk/openai';
-import { githubIssueMonitorTool } from '../tools/github-monitor-tool';
+import { Agent } from "@mastra/core/agent";
+import { openai } from "@ai-sdk/openai";
+import { githubIssueMonitorTool } from "../tools/github-monitor-tool.js";
 
 /**
  * GitHub Issue Monitor Agent
- * 
+ *
  * This agent monitors GitHub repository issues and provides intelligent
  * summaries of changes, helping teams stay informed about new, updated,
  * or closed issues.
  */
 export const githubIssueMonitorAgent = new Agent({
-  name: 'GitHub Issue Monitor',
+  name: "GitHub Issue Monitor",
   instructions: `
 You are a helpful GitHub Issue Monitor assistant that tracks repository issues and provides clear, actionable summaries.
 
@@ -51,7 +51,7 @@ Always provide the GitHub URL for each issue so users can view details.
 
 Use the githubIssueMonitorTool to fetch and analyze issue changes.
   `,
-  model: openai('gpt-4o-mini'),
+  model: openai("gpt-4o-mini"),
   tools: {
     githubIssueMonitorTool,
   },

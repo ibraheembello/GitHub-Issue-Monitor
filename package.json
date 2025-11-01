@@ -7,8 +7,9 @@
   "scripts": {
     "dev": "mastra dev",
     "build": "tsc",
-    "start": "node dist/index.js",
+    "start": "node dist/server.js",
     "start:dev": "tsx src/index.ts",
+    "start:server": "tsx src/server.ts",
     "test": "node --test",
     "lint": "eslint src/**/*.ts"
   },
@@ -38,5 +39,8 @@
     "express": "^5.1.0",
     "node-cron": "^4.2.1",
     "zod": "^3.25.76"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

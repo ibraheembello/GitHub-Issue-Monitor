@@ -58,46 +58,35 @@ export async function getGitHubIssuesSummary(
       return `No open issues found in ${owner}/${repo}`;
     }
 
-    // Format issues data for the agent
-    const issuesData = issues.slice(0, 5).map((issue) => ({
-      number: issue.number,
-      title: issue.title,
-      author: issue.user?.login || "unknown",
-      state: issue.state,
-      labels: issue.labels
+    // Format issues directly without OpenAI (more reliable)
+    const recentIssues = issues.slice(0, 5);
+
+    let summary = `📊 **GitHub Repository: ${owner}/${repo}**\n\n`;
+    summary += `Total open issues: **${issues.length}**\n`;
+    summary += `Showing 5 most recent:\n\n`;
+
+    recentIssues.forEach((issue, index) => {
+      const labels = issue.labels
         .slice(0, 2)
         .map((l: any) => (typeof l === "string" ? l : l.name))
-        .join(", "),
-      url: issue.html_url,
-      created: issue.created_at,
-    }));
+        .join(", ");
 
-    console.log(`[Simple Agent] Formatted ${issuesData.length} issues`);
-
-    // Create prompt with data
-    const prompt = `Here are the 5 most recent issues from ${owner}/${repo}:
-
-${JSON.stringify(issuesData, null, 2)}
-
-Total open issues: ${issues.length}
-
-Please format this into a nice, concise summary with emojis. Show each issue with its number, title, author, labels, and URL. Keep it under 2000 characters.`;
-
-    console.log(`[Simple Agent] Calling OpenAI for formatting...`);
-
-    // Generate response
-    const response = await simpleGithubAgent.generate(prompt, {
-      maxSteps: 1,
+      summary += `${index + 1}. **#${issue.number}**: ${issue.title}\n`;
+      summary += `   👤 @${issue.user?.login || "unknown"}`;
+      if (labels) {
+        summary += ` | 🏷️ ${labels}`;
+      }
+      summary += `\n   🔗 ${issue.html_url}\n\n`;
     });
 
-    console.log(
-      `[Simple Agent] OpenAI response length: ${response.text?.length || 0}`
-    );
+    summary += `\n💡 *Ask for specific labels or date ranges to filter results*`;
 
-    return response.text || "Unable to generate summary";
+    console.log(`[Simple Agent] Formatted summary (${summary.length} chars)`);
+
+    return summary;
   } catch (error: any) {
     console.error("[Simple Agent] ERROR:", error.message);
     console.error("[Simple Agent] Stack:", error.stack);
-    return `Error: ${error.message}`;
+    return `Error fetching issues: ${error.message}`;
   }
 }

@@ -71,15 +71,57 @@ const server = createServer(async (req, res) => {
     req.on("end", async () => {
       try {
         const data = JSON.parse(body);
-        const messages = data.messages || [];
+        console.log("[DEBUG] Received request:", JSON.stringify(data, null, 2));
 
-        if (!messages.length) {
+        // Handle multiple message formats from different A2A clients
+        let userMessage = "";
+
+        // Format 1: Standard Mastra format - messages array
+        if (
+          data.messages &&
+          Array.isArray(data.messages) &&
+          data.messages.length > 0
+        ) {
+          userMessage = data.messages[data.messages.length - 1];
+        }
+        // Format 2: Direct message field
+        else if (data.message) {
+          userMessage = data.message;
+        }
+        // Format 3: Text field
+        else if (data.text) {
+          userMessage = data.text;
+        }
+        // Format 4: Input field
+        else if (data.input) {
+          userMessage = data.input;
+        }
+        // Format 5: Parts array (Telex format)
+        else if (
+          data.parts &&
+          Array.isArray(data.parts) &&
+          data.parts.length > 0
+        ) {
+          const textPart = data.parts.find((p: any) => p.kind === "text");
+          if (textPart) {
+            userMessage = textPart.text;
+          }
+        }
+
+        if (!userMessage) {
+          console.error("[ERROR] No message found in request body");
           res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "No messages provided" }));
+          res.end(
+            JSON.stringify({
+              error: "No message provided",
+              received: data,
+            })
+          );
           return;
         }
 
         console.log(`[${new Date().toISOString()}] API Request received`);
+        console.log(`[DEBUG] User message: "${userMessage}"`);
 
         const agent = await mastra.getAgent("githubIssueMonitorAgent");
 
@@ -89,7 +131,7 @@ const server = createServer(async (req, res) => {
           return;
         }
 
-        const response = await agent.generate(messages[messages.length - 1], {
+        const response = await agent.generate(userMessage, {
           maxSteps: 5,
         });
 

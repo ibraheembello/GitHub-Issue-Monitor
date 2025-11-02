@@ -188,7 +188,15 @@ const server = createServer(async (req, res) => {
         }
 
         const response = await agent.generate(userMessage, {
-          maxSteps: 5,
+          maxSteps: 10,
+          onStepFinish: (step) => {
+            console.log(`[DEBUG] Step finished:`, {
+              stepType: step.stepType,
+              toolCalls: step.toolCalls?.length || 0,
+              hasText: !!step.text,
+              finishReason: step.finishReason,
+            });
+          },
         });
 
         // Return JSON-RPC response if request was JSON-RPC

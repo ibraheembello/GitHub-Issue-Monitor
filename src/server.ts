@@ -5,6 +5,9 @@ import { parse } from "url";
 // Import Mastra instance
 import { mastra } from "./mastra/index.js";
 
+// Import simple agent as fallback
+import { getGitHubIssuesSummary } from "./mastra/agents/simple-github-agent.js";
+
 // Import monitoring service
 import { checkGitHubIssues } from "./services/monitor-service.js";
 import cron from "node-cron";
@@ -164,6 +167,68 @@ const server = createServer(async (req, res) => {
         console.log(`[${new Date().toISOString()}] API Request received`);
         console.log(`[DEBUG] User message: "${userMessage}"`);
 
+        // Check if message is about GitHub repository
+        const githubRepoMatch = userMessage.match(/(\w+)\/(\w+)/);
+
+        if (githubRepoMatch) {
+          // Use simple direct approach for GitHub queries
+          console.log("[DEBUG] Using simple GitHub agent");
+          const [, owner, repo] = githubRepoMatch;
+
+          try {
+            const summaryText = await getGitHubIssuesSummary(owner, repo);
+
+            console.log(
+              "[DEBUG] Simple agent response:",
+              summaryText.substring(0, 200)
+            );
+
+            // Return proper A2A response format
+            const a2aResponse = {
+              kind: "message",
+              role: "assistant",
+              parts: [
+                {
+                  kind: "text",
+                  text: summaryText,
+                },
+              ],
+            };
+
+            // Return JSON-RPC response if request was JSON-RPC
+            if (data.jsonrpc === "2.0") {
+              res.writeHead(200, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  jsonrpc: "2.0",
+                  id: data.id,
+                  result: a2aResponse,
+                })
+              );
+            } else {
+              res.writeHead(200, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  text: summaryText,
+                  message: a2aResponse,
+                  finishReason: "stop",
+                })
+              );
+            }
+
+            console.log(
+              `[${new Date().toISOString()}] Simple agent request completed successfully`
+            );
+            return;
+          } catch (error: any) {
+            console.error("[ERROR] Simple agent failed:", error.message);
+            console.error("[ERROR] Stack:", error.stack);
+            // Fall through to use main agent
+          }
+        }
+
+        // Use main Mastra agent
+        console.log("[DEBUG] Using main Mastra agent");
         const agent = await mastra.getAgent("githubIssueMonitorAgent");
 
         if (!agent) {
@@ -200,6 +265,27 @@ const server = createServer(async (req, res) => {
           },
         });
 
+        console.log(
+          "[DEBUG] Agent response text length:",
+          response.text?.length || 0
+        );
+        console.log(
+          "[DEBUG] Agent response preview:",
+          response.text?.substring(0, 200) || "EMPTY"
+        );
+
+        // Create proper A2A response format
+        const a2aResponse = {
+          kind: "message",
+          role: "assistant",
+          parts: [
+            {
+              kind: "text",
+              text: response.text || "No response generated. Please try again.",
+            },
+          ],
+        };
+
         // Return JSON-RPC response if request was JSON-RPC
         if (data.jsonrpc === "2.0") {
           res.writeHead(200, { "Content-Type": "application/json" });
@@ -207,11 +293,7 @@ const server = createServer(async (req, res) => {
             JSON.stringify({
               jsonrpc: "2.0",
               id: data.id,
-              result: {
-                text: response.text,
-                steps: response.steps,
-                finishReason: "stop",
-              },
+              result: a2aResponse,
             })
           );
         } else {
@@ -219,6 +301,7 @@ const server = createServer(async (req, res) => {
           res.end(
             JSON.stringify({
               text: response.text,
+              message: a2aResponse,
               steps: response.steps,
               finishReason: "stop",
             })

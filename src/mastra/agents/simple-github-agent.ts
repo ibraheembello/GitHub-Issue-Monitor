@@ -40,6 +40,8 @@ export async function getGitHubIssuesSummary(
   repo: string
 ): Promise<string> {
   try {
+    console.log(`[Simple Agent] Fetching issues for ${owner}/${repo}`);
+
     // Fetch issues from GitHub
     const { data: issues } = await octokit.rest.issues.listForRepo({
       owner,
@@ -49,6 +51,8 @@ export async function getGitHubIssuesSummary(
       sort: "created",
       direction: "desc",
     });
+
+    console.log(`[Simple Agent] Fetched ${issues.length} issues`);
 
     if (issues.length === 0) {
       return `No open issues found in ${owner}/${repo}`;
@@ -68,6 +72,8 @@ export async function getGitHubIssuesSummary(
       created: issue.created_at,
     }));
 
+    console.log(`[Simple Agent] Formatted ${issuesData.length} issues`);
+
     // Create prompt with data
     const prompt = `Here are the 5 most recent issues from ${owner}/${repo}:
 
@@ -77,14 +83,21 @@ Total open issues: ${issues.length}
 
 Please format this into a nice, concise summary with emojis. Show each issue with its number, title, author, labels, and URL. Keep it under 2000 characters.`;
 
+    console.log(`[Simple Agent] Calling OpenAI for formatting...`);
+
     // Generate response
     const response = await simpleGithubAgent.generate(prompt, {
       maxSteps: 1,
     });
 
+    console.log(
+      `[Simple Agent] OpenAI response length: ${response.text?.length || 0}`
+    );
+
     return response.text || "Unable to generate summary";
   } catch (error: any) {
-    console.error("Error fetching GitHub issues:", error);
+    console.error("[Simple Agent] ERROR:", error.message);
+    console.error("[Simple Agent] Stack:", error.stack);
     return `Error: ${error.message}`;
   }
 }

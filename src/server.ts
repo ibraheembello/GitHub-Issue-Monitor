@@ -189,6 +189,7 @@ const server = createServer(async (req, res) => {
 
         const response = await agent.generate(userMessage, {
           maxSteps: 10,
+          toolChoice: "required", // Force the agent to use a tool
           onStepFinish: (step) => {
             console.log(`[DEBUG] Step finished:`, {
               stepType: step.stepType,

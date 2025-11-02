@@ -76,47 +76,88 @@ const server = createServer(async (req, res) => {
         // Handle multiple message formats from different A2A clients
         let userMessage = "";
 
-        // Format 1: Standard Mastra format - messages array
+        // Check if it's JSON-RPC 2.0 format (Telex uses this)
+        let messageData = data;
+        if (data.jsonrpc === "2.0" && data.params) {
+          messageData = data.params;
+          console.log("[DEBUG] Detected JSON-RPC 2.0 format");
+        }
+
+        // Format 1: JSON-RPC with params.message.parts (Telex format)
         if (
-          data.messages &&
-          Array.isArray(data.messages) &&
-          data.messages.length > 0
+          messageData.message?.parts &&
+          Array.isArray(messageData.message.parts)
         ) {
-          userMessage = data.messages[data.messages.length - 1];
+          const textPart = messageData.message.parts.find(
+            (p: any) => p.kind === "text"
+          );
+          if (textPart?.text) {
+            userMessage = textPart.text;
+          }
         }
-        // Format 2: Direct message field
-        else if (data.message) {
-          userMessage = data.message;
-        }
-        // Format 3: Text field
-        else if (data.text) {
-          userMessage = data.text;
-        }
-        // Format 4: Input field
-        else if (data.input) {
-          userMessage = data.input;
-        }
-        // Format 5: Parts array (Telex format)
+        // Format 2: Standard Mastra format - messages array
         else if (
-          data.parts &&
-          Array.isArray(data.parts) &&
-          data.parts.length > 0
+          messageData.messages &&
+          Array.isArray(messageData.messages) &&
+          messageData.messages.length > 0
         ) {
-          const textPart = data.parts.find((p: any) => p.kind === "text");
-          if (textPart) {
+          userMessage = messageData.messages[messageData.messages.length - 1];
+        }
+        // Format 3: Direct message field
+        else if (
+          messageData.message &&
+          typeof messageData.message === "string"
+        ) {
+          userMessage = messageData.message;
+        }
+        // Format 4: Text field
+        else if (messageData.text) {
+          userMessage = messageData.text;
+        }
+        // Format 5: Input field
+        else if (messageData.input) {
+          userMessage = messageData.input;
+        }
+        // Format 6: Parts array (direct)
+        else if (messageData.parts && Array.isArray(messageData.parts)) {
+          const textPart = messageData.parts.find(
+            (p: any) => p.kind === "text"
+          );
+          if (textPart?.text) {
             userMessage = textPart.text;
           }
         }
 
         if (!userMessage) {
           console.error("[ERROR] No message found in request body");
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              error: "No message provided",
-              received: data,
-            })
+          console.error(
+            "[ERROR] Request structure:",
+            JSON.stringify(data, null, 2)
           );
+
+          // Return JSON-RPC error if request was JSON-RPC
+          if (data.jsonrpc === "2.0") {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                jsonrpc: "2.0",
+                id: data.id,
+                error: {
+                  code: -32602,
+                  message: "Invalid params: No message text found",
+                  data: { received: data },
+                },
+              })
+            );
+          } else {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: "No message provided",
+                received: data,
+              })
+            );
+          }
           return;
         }
 
@@ -126,8 +167,23 @@ const server = createServer(async (req, res) => {
         const agent = await mastra.getAgent("githubIssueMonitorAgent");
 
         if (!agent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Agent not found" }));
+          // Return JSON-RPC error if request was JSON-RPC
+          if (data.jsonrpc === "2.0") {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                jsonrpc: "2.0",
+                id: data.id,
+                error: {
+                  code: -32603,
+                  message: "Internal error: Agent not found",
+                },
+              })
+            );
+          } else {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Agent not found" }));
+          }
           return;
         }
 
@@ -135,25 +191,59 @@ const server = createServer(async (req, res) => {
           maxSteps: 5,
         });
 
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({
-            text: response.text,
-            steps: response.steps,
-            finishReason: "stop",
-          })
-        );
+        // Return JSON-RPC response if request was JSON-RPC
+        if (data.jsonrpc === "2.0") {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: data.id,
+              result: {
+                text: response.text,
+                steps: response.steps,
+                finishReason: "stop",
+              },
+            })
+          );
+        } else {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              text: response.text,
+              steps: response.steps,
+              finishReason: "stop",
+            })
+          );
+        }
 
         console.log(`[${new Date().toISOString()}] API Request completed`);
       } catch (error: any) {
         console.error("Error processing request:", error);
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({
-            error: "Internal server error",
-            message: error.message,
-          })
-        );
+
+        // Return JSON-RPC error if request was JSON-RPC
+        const requestData = body ? JSON.parse(body) : {};
+        if (requestData.jsonrpc === "2.0") {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: requestData.id,
+              error: {
+                code: -32603,
+                message: "Internal error",
+                data: { message: error.message },
+              },
+            })
+          );
+        } else {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: "Internal server error",
+              message: error.message,
+            })
+          );
+        }
       }
     });
     return;
